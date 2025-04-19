@@ -1,0 +1,11 @@
+prefix=/home/ilyaieshin/dev/ServerVoiceApp/local
+exec_prefix=/home/ilyaieshin/dev/ServerVoiceApp/local
+libdir=/home/ilyaieshin/dev/ServerVoiceApp/local/lib
+includedir=/home/ilyaieshin/dev/ServerVoiceApp/local/include
+
+Name: cassandra
+Description: A C/C++ client driver for Apache Cassandra and DataStax Products
+Version: 2.17.1
+Libs: -L${libdir} -lcassandra
+Cflags: -I${includedir}
+URL: https://github.com/datastax/cpp-driver/
