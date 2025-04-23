@@ -1,6 +1,6 @@
 project(db)
 
-find_package(libpqxx CONFIG REQUIRED)
+find_library(PQXX_LIB pqxx REQUIRED)
 find_package(Threads REQUIRED)
 set(CASS_DRIVER_PREFIX "${PROJECT_SOURCE_DIR}/../local" CACHE PATH "prefix of manually installed cassandra‑cpp‑driver")
 
@@ -23,11 +23,17 @@ set_target_properties(cassandra::cassandra PROPERTIES
     IMPORTED_LOCATION            "${CASSANDRA_LIBRARY}"
     INTERFACE_INCLUDE_DIRECTORIES "${CASSANDRA_INCLUDE_DIR}")# 4. Минимальные модули-пустышки (библиотеки) — будут наполняться кодом позднее
 
-add_library(${PROJECT_NAME} SHARED db.h db.cpp)
+add_library(${PROJECT_NAME} SHARED postgreshandler.h postgreshandler.cpp
+    request_repositories.h request_repositories.cpp
+    cassandrahandler.h cassandrahandler.cpp
+    helper.h
+    helper.cpp)
 
 target_link_libraries(${PROJECT_NAME}
     PUBLIC
         cassandra::cassandra
-        libpqxx::pqxx
+        #libpqxx::pqxx
+        ${PQXX_LIB}
         Threads::Threads
+        uuid
 )
