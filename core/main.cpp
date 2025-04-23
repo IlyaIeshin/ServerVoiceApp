@@ -1,7 +1,7 @@
-#include <iostream>
+#include "gateway/gateway.h"
 
-int main(int argc, char *argv[])
-{
-    std::cout << "Start server\n";
+int main() {
+    GatewayServer server;
+    server.run(18080);
     return 0;
 }

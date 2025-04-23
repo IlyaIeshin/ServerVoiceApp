@@ -27,7 +27,8 @@ add_library(${PROJECT_NAME} SHARED postgreshandler.h postgreshandler.cpp
     request_repositories.h request_repositories.cpp
     cassandrahandler.h cassandrahandler.cpp
     helper.h
-    helper.cpp)
+    helper.cpp
+)
 
 target_link_libraries(${PROJECT_NAME}
     PUBLIC
