@@ -14,6 +14,7 @@ public:
     static std::string handle(const std::string& command);
 
 private:
+    static std::vector<std::string> split(const std::string& str, char delimiter);
     static PostgresHandler psql_handler;
     static CassandraHandler cass_handler;
 };

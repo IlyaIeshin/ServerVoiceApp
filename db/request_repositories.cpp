@@ -42,28 +42,38 @@ Result<UUID> UserRepository::loginUser(const std::string &email, const std::stri
     }
 }
 
-Result<UUID> UserRepository::createServer(const std::string name, const std::string &owner_id, const std::string &password)
+Result<Server> UserRepository::createServer(const std::string name, const std::string &owner_id,
+                                          const std::string &password, const std::string& icon_url)
 {
     try {
         auto checkServerIfExists = handler.query("SELECT id FROM servers WHERE name = '" + name + "'");
         if(!checkServerIfExists.empty()) return {Error::ServerAlreadyExists};
 
         std::string uuid_server = generateUuid();
-        std::string insert = "INSERT INTO servers (id, name, password, owner_id) VALUES ('" +
-                             uuid_server + "', '" + name + "', '" + sha256(password) + "', '" + owner_id + "')";
+        std::string insert = "INSERT INTO servers (id, name, password, owner_id, icon_url) VALUES ('" +
+                             uuid_server + "', '" + name + "', '" + sha256(password) + "', '" + owner_id + "', '" + icon_url + "')";
         handler.execute(insert);
 
         insert = "INSERT INTO server_membership (server_id, user_id, role) VALUES ('" +
                  uuid_server + "', '" + owner_id + "', 'owner')";
         handler.execute(insert);
 
-        return {Error::None, uuid_server};
+        return {Error::None, Server{uuid_server, name, icon_url}};
     } catch (...) {
         return {Error::DbError};
     }
 }
 
-Result<void> UserRepository::leaveServer(const std::string &user_id, const std::string &server_id)
+Result<UUID> UserRepository::deleteServer(const std::string &user_id, const std::string &server_id)
+{
+    try {
+
+    } catch (...) {
+        return {Error::DbError};
+    }
+}
+
+Result<UUID> UserRepository::leaveServer(const std::string &user_id, const std::string &server_id)
 {
     //TODO: необходима проверка на то что user_id == owner_id
     try {
@@ -71,7 +81,7 @@ Result<void> UserRepository::leaveServer(const std::string &user_id, const std::
                                 "WHERE user_id = '" + user_id + "' "
                                 "AND server_id = '" + server_id + "'";
     handler.execute(delete_server);
-    return {Error::None};
+    return {Error::None, {server_id}};
     } catch (...) {
         return {Error::DbError};
     }
@@ -82,20 +92,44 @@ Result<UUID> UserRepository::joinServer(const std::string &user_id, const std::s
     return {};
 }
 
-Result<std::vector<UUID> > UserRepository::getFriendIds(const std::string &user_id)
-{
-    return {};
-}
-
-Result<std::vector<UUID> > UserRepository::getUserServerIds(const std::string &user_id)
+Result<std::vector<Friend> > UserRepository::getFriends(const std::string &user_id)
 {
     try {
-        std::string select = "SELECT server_id FROM server_membership WHERE "
-                             "user_id = '" + user_id + "'";
+        std::string select = "SELECT users.id, users.username, users.avatar_url, users.status "
+                             "FROM users "
+                             "JOIN relations_users ON users.id = relations_users.friend_id "
+                             "WHERE relations_users.user_id = '" + user_id + "'";
         auto results = handler.query(select);
-        std::vector<UUID> servers;
-        for(auto res : results) {
-            servers.push_back(UUID{res["id"].as<std::string>()});
+        std::vector<Friend> friends;
+        for(const auto& res : results) {
+            friends.push_back({
+                res["id"].as<std::string>(),
+                res["username"].as<std::string>(),
+                res["avatar_url"].is_null() ? "" : res["avatar_url"].as<std::string>(),
+                res["status"].is_null() ? "" : res["status"].as<std::string>()
+            });
+        }
+        return {Error::None, friends};
+    } catch (...) {
+        return {Error::DbError};
+    }
+}
+
+Result<std::vector<Server> > UserRepository::getUserServers(const std::string &user_id)
+{
+    try {
+        std::string select = "SELECT servers.id, servers.name, servers.icon_url "
+                             "FROM servers "
+                             "JOIN server_membership ON servers.id = server_membership.server_id "
+                             "WHERE server_membership.user_id = '" + user_id + "'";
+        auto results = handler.query(select);
+        std::vector<Server> servers;
+        for(const auto& res : results) {
+            servers.push_back({
+                res["id"].as<std::string>(),
+                res["name"].as<std::string>(),
+                res["icon_url"].is_null() ? "" : res["icon_url"].as<std::string>()
+            });
         }
         return {Error::None, servers};
     } catch (...) {
@@ -117,29 +151,64 @@ Result<UUID> ServerRepository::deleteServer(const std::string &server_id)
     return {};
 }
 
-Result<UUID> ServerRepository::createChannel(const std::string name, const std::string &type)
-{
-    return {};
-}
-
-Result<std::vector<UUID> > ServerRepository::getChannelIds(const std::string &server_id)
-{
-    return {};
-}
-
-Result<std::vector<UUID> > ServerRepository::getMemberIds(const std::string &server_id)
+Result<Channel> ServerRepository::createChannel(const std::string& name, const std::string& password,
+                                             const std::string& type, const std::string& server_id,
+                                             const std::string& owner_id)
 {
     try {
-        std::string select = "SELECT server_id FROM server_membership WHERE "
-                             "server_id = '" + server_id + "'";
-        auto results = handler.query(select);
-        std::vector<UUID> users;
-        for(auto res : results) {
-            users.push_back(UUID{res["id"].as<std::string>()});
+        auto checkChannelIfExists = handler.query("SELECT id FROM channels WHERE "
+                             "name = '" + name + "'");
+        if(!checkChannelIfExists.empty()) return {Error::ChannelAlreadyExists};
+
+        std::string uuid = generateUuid();
+
+        std::string insert = "INSERT INTO channels (id, name, password, type, server_id, owner_id) VALUES "
+                             "('" + uuid + "', '" + name + "', '" + sha256(password) + "', '" + type +
+                             + "', '" + server_id + "', '"  + owner_id + "')";
+
+        handler.execute(insert);
+
+        return {Error::None, Channel{uuid, name, type}};
+    } catch (...) {
+        return {Error::DbError};
+    }
+}
+
+Result<std::vector<Channel> > ServerRepository::getAllChannels(const std::vector<std::string> &server_ids)
+{
+    try {
+        if (server_ids.empty()) {
+            return {Error::None, {}}; // если список пустой — сразу вернуть пусто
         }
-        return {Error::None, users};
+
+        std::string query = "SELECT id, name, type, server_id FROM channels WHERE server_id = ANY('{";
+        for (size_t i = 0; i < server_ids.size(); ++i) {
+            query += "\"" + server_ids[i] + "\"";
+            if (i != server_ids.size() - 1) {
+                query += ",";
+            }
+        }
+        query += "}')";
+
+        auto results = handler.query(query);
+
+        std::vector<Channel> channels;
+        for(const auto& res : results) {
+            channels.push_back({
+                res["id"].as<std::string>(),
+                res["name"].as<std::string>(),
+                res["type"].as<std::string>(),
+                res["server_id"].as<std::string>()
+            });
+        }
+        return {Error::None, channels};
     } catch (...) {
         return {Error::DbError};
     }
     return {};
+}
+
+Result<std::vector<UUID> > ServerRepository::getMembers(const std::string &server_id)
+{
+    return {Error::DbError};
 }
