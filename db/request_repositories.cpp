@@ -64,15 +64,6 @@ Result<Server> UserRepository::createServer(const std::string name, const std::s
     }
 }
 
-Result<UUID> UserRepository::deleteServer(const std::string &user_id, const std::string &server_id)
-{
-    try {
-
-    } catch (...) {
-        return {Error::DbError};
-    }
-}
-
 Result<UUID> UserRepository::leaveServer(const std::string &user_id, const std::string &server_id)
 {
     //TODO: необходима проверка на то что user_id == owner_id
@@ -137,13 +128,6 @@ Result<std::vector<Server> > UserRepository::getUserServers(const std::string &u
     }
 }
 
-Result<UUID> UserRepository::getCurrentUUID(const std::string& username)
-{
-    auto result = handler.query("SELECT id FROM users WHERE username = '" + username + "'");
-    std::string uuid = result[0]["id"].as<std::string>();
-    return {Error::None, uuid};
-}
-
 ServerRepository::ServerRepository(PostgresHandler &handler_) : handler(handler_) {}
 
 Result<UUID> ServerRepository::deleteServer(const std::string &server_id)
@@ -205,10 +189,67 @@ Result<std::vector<Channel> > ServerRepository::getAllChannels(const std::vector
     } catch (...) {
         return {Error::DbError};
     }
-    return {};
 }
 
 Result<std::vector<UUID> > ServerRepository::getMembers(const std::string &server_id)
 {
     return {Error::DbError};
+}
+
+ChannelRepository::ChannelRepository(PostgresHandler &psql_handler, CassandraHandler &cass_hander)
+    : handlerPsql(psql_handler), handlerCass(cass_hander) {}
+
+Result<PagedMessages> ChannelRepository::getMessagesPage(const std::string& channel_id,
+                                   const std::string& pageState)
+{
+    try {
+        static const std::string CQL =
+            "SELECT created_at, message_id, sender_id, text_original "
+            "FROM voiceapp.messages "
+            "WHERE channel_id = ?";
+
+        // pagedQuery вернёт rows + токен
+        auto [rows, nextTok] =
+            handlerCass.pagedQuery(CQL, { channel_id }, pageState, 50);
+
+        PagedMessages out;
+        out.msgs.reserve(rows.size());
+
+        for (const auto& row : rows) {
+            out.msgs.emplace_back(Message{
+                /* id        */ row.getUuid(1),
+                /* channel   */ channel_id,
+                /* sender_id */ row.getUuid(2),
+                /* text      */ row.getString(3),
+                /* created   */ std::to_string(row.getInt64(0))
+            });
+        }
+        // переворачиваем newest→oldest  →  old→new
+        std::reverse(out.msgs.begin(), out.msgs.end());
+        out.nextPageState = std::move(nextTok);   // может быть ""
+
+        return { Error::None, std::move(out) };
+    }
+    catch (...) {
+        return { Error::DbError };
+    }
+}
+
+Result<Message> ChannelRepository::addMessage(const std::string &sender_id, const std::string &text, const std::string &channel_id)
+{
+    try {
+        std::string uuid = generateUuid();
+        auto now = std::chrono::system_clock::now();
+        int64_t created_at = std::chrono::duration_cast<std::chrono::milliseconds>(
+                             now.time_since_epoch()).count();
+        std::string insert = "INSERT INTO voiceapp.messages (channel_id, created_at, message_id, sender_id, text_original) "
+                             "VALUES (" + channel_id + ", " + std::to_string(created_at) + ", " + uuid + ", " + sender_id + ", '" + text + "')";
+
+        if(!handlerCass.execute(insert))
+            return {Error::DbError};
+
+        return {Error::None, {uuid, channel_id, sender_id, text, std::to_string(created_at)}};
+    } catch (...) {
+        return {Error::DbError};
+    }
 }

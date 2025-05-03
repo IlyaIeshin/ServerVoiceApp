@@ -4,6 +4,7 @@ add_library(${PROJECT_NAME} SHARED
     gateway.h gateway.cpp
     commanddispatcher.h commanddispatcher.cpp
     jwtservice.h jwtservice.cpp
+    helper_gateway.h
 )
 
 target_compile_definitions(gateway PRIVATE

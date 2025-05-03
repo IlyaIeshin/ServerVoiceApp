@@ -5,13 +5,18 @@
 #include <map>
 #include <db/postgreshandler.h>
 #include <db/cassandrahandler.h>
+#include <db/request_repositories.h>
+#include <nlohmann/json.hpp>
+#include <crow.h>
 
 using ResponseOK = std::map<std::string, std::string>;
 
 class CommandDispatcher
 {
 public:
-    static std::string handle(const std::string& command);
+    static nlohmann::json handle(
+        crow::websocket::connection& conn,
+        const nlohmann::json& req);
 
 private:
     static std::vector<std::string> split(const std::string& str, char delimiter);

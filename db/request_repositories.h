@@ -25,6 +25,20 @@ struct Channel {
     std::string server_id;
 };
 
+struct Message
+{
+    std::string message_id;
+    std::string channel_id;
+    std::string sender_id;
+    std::string text;
+    std::string created_at;
+};
+
+struct PagedMessages {
+    std::vector<Message> msgs;
+    std::string nextPageState;
+};
+
 class UserRepository {
 public:
     explicit UserRepository(PostgresHandler& handler);
@@ -33,11 +47,10 @@ public:
     Result<UUID> leaveServer(const std::string& user_id, const std::string& server_id);
     Result<Server> createServer(const std::string name, const std::string& owner_id,
                               const std::string& password, const std::string& icon_url);
-    Result<UUID> deleteServer(const std::string& user_id, const std::string& server_id);
     Result<UUID> joinServer(const std::string& user_id, const std::string name, const std::string& password);
     Result<std::vector<Friend>> getFriends(const std::string& user_id);
     Result<std::vector<Server>> getUserServers(const std::string& user_id);
-    Result<UUID> getCurrentUUID(const std::string& username);
+
 private:
     PostgresHandler& handler;
 };
@@ -45,9 +58,7 @@ private:
 class ServerRepository {
 public:
     explicit ServerRepository(PostgresHandler& handler);
-    Result<UUID> addNewMember(const std::string& user_id);
     Result<UUID> deleteServer(const std::string& server_id);
-    Result<UUID> getServer(const std::string name, const std::string& password);
     Result<Channel> createChannel(const std::string& name, const std::string& password,
                                const std::string& type, const std::string& server_id,
                                const std::string& owner_id);
@@ -59,13 +70,15 @@ private:
 };
 
 
-// class ChannelRepository {
-//     explicit ChannelRepository(PostgresHandler& handler);
-// public:
-//     Result<std::vector<Message>> getMessages(const std::string& channelId);
+class ChannelRepository {
+public:
+    explicit ChannelRepository(PostgresHandler& psql_handler, CassandraHandler& cass_hander);
+    Result<PagedMessages> getMessagesPage(const std::string& channel_id,const std::string& pageState = "");
+    Result<Message> addMessage(const std::string& sender_id, const std::string& text, const std::string& channel_id);
 
-// private:
-//     PostgresHandler& handler;
-// };
+private:
+    PostgresHandler& handlerPsql;
+    CassandraHandler& handlerCass;
+};
 
 #endif // REQUEST_REPOSITORIES_H
