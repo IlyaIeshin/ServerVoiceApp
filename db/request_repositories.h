@@ -5,6 +5,12 @@
 #include "cassandrahandler.h"
 #include "helper.h"
 
+struct User {
+    std::string id;
+    std::string username;
+    std::string avatar_url;
+};
+
 struct Friend {
     std::string id;
     std::string username;
@@ -42,8 +48,9 @@ struct PagedMessages {
 class UserRepository {
 public:
     explicit UserRepository(PostgresHandler& handler);
-    Result<UUID> registerUser(const std::string& email, const std::string& username, const std::string& password);
-    Result<UUID> loginUser(const std::string& email, const std::string& password);
+    Result<User> getUserData(const std::string user_id);
+    Result<User> registerUser(const std::string& email, const std::string& username, const std::string& password, const std::string& avatar_url);
+    Result<User> loginUser(const std::string& email, const std::string& password);
     Result<UUID> leaveServer(const std::string& user_id, const std::string& server_id);
     Result<Server> createServer(const std::string name, const std::string& owner_id,
                               const std::string& password, const std::string& icon_url);

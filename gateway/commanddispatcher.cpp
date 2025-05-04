@@ -27,26 +27,44 @@ json CommandDispatcher::handle(crow::websocket::connection& conn, const json& re
         /* =============== АВТОРИЗАЦИЯ / РЕГИСТРАЦИЯ =============== */
         if (type == "command" && command == "loadToken") {
             std::string user_id = jwt_serv.verifyToken(payload.at("token"));
+            Result result = rep_user.getUserData(user_id);
+
+            json user_json = {
+                {"user_id",         result.value.id},
+                {"name",       result.value.username},
+                {"avatar_url", result.value.avatar_url.empty() ? "" : result.value.avatar_url}
+            };
+
             response = {
                 {"type",    "response"},
                 {"command", "loadToken"},
                 {"status",  "ok"},
-                {"data",    ResponseOK{{"user_id", user_id}}},
+                {"data",    {{"user_json", user_json}}},
                 {"error-msg", json::object()}
             };
         }
         else if (type == "command" && command == "register") {
             Result result = rep_user.registerUser(payload.at("email"),
                                                   payload.at("username"),
-                                                  payload.at("password"));
+                                                  payload.at("password"),
+                                                  payload.at("avatar_url"));
+
             switch (result.getResult()) {
             case Error::None: {
-                JwtToken jwt = jwt_serv.generateToken(result.value);
+                JwtToken jwt = jwt_serv.generateToken(result.value.id);
+
+                json user_json = {
+                    {"user_id",         result.value.id},
+                    {"username",       result.value.username},
+                    {"avatar_url", result.value.avatar_url.empty() ? "" : result.value.avatar_url},
+                    {"token", jwt}
+                };
+
                 response = {
                     {"type",    "response"},
                     {"command", "register"},
                     {"status",  "ok"},
-                    {"data",    ResponseOK{{"token", jwt}}},
+                    {"data",    {{"user_json", user_json}}},
                     {"error-msg", json::object()}
                 }; break; }
             case Error::EmailAlreadyUsed: {
@@ -78,14 +96,23 @@ json CommandDispatcher::handle(crow::websocket::connection& conn, const json& re
         }
         else if (type == "command" && command == "authentication") {
             Result result = rep_user.loginUser(payload.at("email"), payload.at("password"));
+
             switch (result.getResult()) {
             case Error::None: {
-                JwtToken jwt = jwt_serv.generateToken(result.value);
+                JwtToken jwt = jwt_serv.generateToken(result.value.id);
+
+                json user_json = {
+                    {"user_id",         result.value.id},
+                    {"username",       result.value.username},
+                    {"avatar_url", result.value.avatar_url.empty() ? "" : result.value.avatar_url},
+                    {"token", jwt}
+                };
+
                 response = {
                     {"type",    "response"},
                     {"command", "authentication"},
                     {"status",  "ok"},
-                    {"data",    ResponseOK{{"token", jwt}}},
+                    {"data",    {{"user_json", user_json}}},
                     {"error-msg", json::object()}
                 }; break; }
             case Error::UserNotFound: {
@@ -333,6 +360,13 @@ json CommandDispatcher::handle(crow::websocket::connection& conn, const json& re
             }
         }
 
+        /* =============== ПОДПИСКИ НА ТЕКСТОВЫЕ КАНАЛЫ =============== */
+        else if (command == "subscribeVoiceChannel") {
+
+        }
+        else if (command == "unsubscribeVoiceChannel") {
+
+        }
 
         /* ======================== СПИСОК СЕРВЕРОВ ======================== */
         else if (command == "getServers") {

@@ -7,9 +7,10 @@ add_library(${PROJECT_NAME} SHARED
     helper_gateway.h
 )
 
-target_compile_definitions(gateway PRIVATE
+target_compile_definitions(${PROJECT_NAME} PRIVATE
     CROW_ENABLE_WEBSOCKET    # если вам нужен WebSocket
     CROW_ENABLE_COMPRESSION  # включаем компрессию
+    CROW_ENABLE_SSL
 )
 
 find_package(Crow CONFIG REQUIRED)
@@ -17,6 +18,9 @@ find_package(OpenSSL REQUIRED)
 find_package(ZLIB REQUIRED)  # <-- добавляем поиск zlib
 
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_LIST_DIR}/..)
+
+file(COPY ${CMAKE_SOURCE_DIR}/certificates/
+     DESTINATION ${CMAKE_BINARY_DIR}/core/certificates)
 
 target_link_libraries(${PROJECT_NAME}
     PUBLIC

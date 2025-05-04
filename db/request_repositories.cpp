@@ -3,7 +3,19 @@
 
 UserRepository::UserRepository(PostgresHandler &handler_) : handler(handler_) {}
 
-Result<UUID> UserRepository::registerUser(const std::string &email, const std::string &username, const std::string &password)
+Result<User> UserRepository::getUserData(const std::string user_id)
+{
+    try {
+        auto res = handler.query("SELECT username, avatar_url FROM users WHERE id = '" + user_id + "'");
+        if (res.empty()) return {Error::UserNotFound};
+
+        return {Error::None, {user_id, res[0]["username"].as<std::string>(), res[0]["avatar_url"].as<std::string>()}};
+    } catch (...) {
+        return {Error::DbError};
+    }
+}
+
+Result<User> UserRepository::registerUser(const std::string &email, const std::string &username, const std::string &password, const std::string& avatar_url)
 {
     try {
         auto emailCheck = handler.query("SELECT id FROM users WHERE email = '" + email + "'");
@@ -14,21 +26,21 @@ Result<UUID> UserRepository::registerUser(const std::string &email, const std::s
 
         std::string uuid = generateUuid();
 
-        std::string insert = "INSERT INTO users (id, email, username, password_hash) VALUES ('" +
-                             uuid + "', '" + email + "', '" + username + "', '" + sha256(password) + "')";
+        std::string insert = "INSERT INTO users (id, email, username, password_hash, avatar_url) VALUES ('" +
+                             uuid + "', '" + email + "', '" + username + "', '" + sha256(password) + "', '" + avatar_url + "')";
 
         handler.execute(insert);
 
-        return {Error::None, uuid};
+        return {Error::None, {uuid, username, avatar_url}};
     } catch (...) {
         return {Error::DbError};
     }
 }
 
-Result<UUID> UserRepository::loginUser(const std::string &email, const std::string &password)
+Result<User> UserRepository::loginUser(const std::string &email, const std::string &password)
 {
     try {
-        auto res = handler.query("SELECT id, password_hash FROM users WHERE email = '" + email + "'");
+        auto res = handler.query("SELECT id, password_hash, username, avatar_url FROM users WHERE email = '" + email + "'");
         if (res.empty()) return {Error::UserNotFound};
 
         auto storedHash = res[0]["password_hash"].as<std::string>();
@@ -36,7 +48,7 @@ Result<UUID> UserRepository::loginUser(const std::string &email, const std::stri
 
         std::string uuid = res[0]["id"].as<std::string>();
 
-        return {Error::None, uuid};
+        return {Error::None, {uuid, res[0]["username"].as<std::string>(), res[0]["avatar_url"].as<std::string>()}};
     } catch (...) {
         return {Error::DbError};
     }
