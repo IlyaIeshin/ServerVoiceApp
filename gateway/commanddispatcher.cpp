@@ -204,7 +204,44 @@ json CommandDispatcher::handle(crow::websocket::connection& conn, const json& re
                 }; break; }
             }
         }
-
+        else if (command == "joinToServer") {
+            Result result = rep_user.joinToServer(payload.at("user_id"), payload.at("server_id"));
+            json server_json = {
+                {"id",       result.value.id},
+                {"name",     result.value.name},
+                {"icon_url", result.value.icon_url.empty() ? "" : result.value.icon_url}
+            };
+            switch (result.getResult()) {
+            case Error::None:
+                response = {
+                    {"type",    "response"},
+                    {"command", "joinToServer"},
+                    {"status",  "ok"},
+                    {"data",    {{"server_json", server_json}}},
+                    {"error-msg", json::object()}
+                };
+                break;
+            case Error::ServerNotFound:
+                response = {
+                    {"type",    "response"},
+                    {"command", "joinToServer"},
+                    {"status",  "error"},
+                    {"data",    json::object()},
+                    {"error-msg", "server not found"}
+                };
+                break;
+            case Error::DbError:
+            default:
+                response = {
+                    {"type",    "response"},
+                    {"command", "joinToServer"},
+                    {"status",  "error"},
+                    {"data",    json::object()},
+                    {"error-msg", "unknown error database"}
+                };
+                break;
+            }
+        }
         /* ======================== КАНАЛЫ ======================== */
         else if (command == "createChannel") {
             Result result = rep_server.createChannel(payload.at("name"),
@@ -360,7 +397,7 @@ json CommandDispatcher::handle(crow::websocket::connection& conn, const json& re
             }
         }
 
-        /* =============== ПОДПИСКИ НА ТЕКСТОВЫЕ КАНАЛЫ =============== */
+        /* =============== ПОДПИСКИ НА ГОЛОСОВЫЕ КАНАЛЫ =============== */
         else if (command == "subscribeVoiceChannel") {
 
         }

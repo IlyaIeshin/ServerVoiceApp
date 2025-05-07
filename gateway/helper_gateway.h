@@ -39,7 +39,7 @@ public:
         if (it == subs_.end()) return;
 
         for (auto* conn : it->second)
-            if (conn)                            // метод is_open() в новой Crow отсутствует
+            if (conn)
                 conn->send_text(text);
     }
 

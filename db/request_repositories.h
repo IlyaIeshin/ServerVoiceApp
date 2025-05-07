@@ -54,7 +54,7 @@ public:
     Result<UUID> leaveServer(const std::string& user_id, const std::string& server_id);
     Result<Server> createServer(const std::string name, const std::string& owner_id,
                               const std::string& password, const std::string& icon_url);
-    Result<UUID> joinServer(const std::string& user_id, const std::string name, const std::string& password);
+    Result<Server> joinToServer(const std::string& user_id, const std::string& server_id);
     Result<std::vector<Friend>> getFriends(const std::string& user_id);
     Result<std::vector<Server>> getUserServers(const std::string& user_id);
 

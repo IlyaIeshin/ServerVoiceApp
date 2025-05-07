@@ -17,6 +17,7 @@ enum class Error {
 
     // Сервер
     ServerAlreadyExists,
+    ServerNotFound,
 
     //Каналы
     ChannelAlreadyExists,

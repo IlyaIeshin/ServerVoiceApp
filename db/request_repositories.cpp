@@ -90,9 +90,20 @@ Result<UUID> UserRepository::leaveServer(const std::string &user_id, const std::
     }
 }
 
-Result<UUID> UserRepository::joinServer(const std::string &user_id, const std::string name, const std::string &password)
+Result<Server> UserRepository::joinToServer(const std::string& user_id, const std::string& server_id)
 {
-    return {};
+    try {
+        auto server = handler.query("SELECT name, password, icon_url FROM servers WHERE id = '" + server_id + "'");
+        if(server.empty()) return {Error::ServerNotFound};
+
+        std::string insert = "INSERT INTO server_membership (server_id, user_id, role) VALUES ('" +
+                                server_id + "', '" + user_id + "', 'member')";
+        handler.execute(insert);
+
+        return {Error::None, Server{server_id, server[0]["name"].as<std::string>(), server[0]["icon_url"].as<std::string>()}};
+    } catch (...) {
+        return {Error::DbError};
+    }
 }
 
 Result<std::vector<Friend> > UserRepository::getFriends(const std::string &user_id)
