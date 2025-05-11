@@ -7,7 +7,7 @@
 #include <db/cassandrahandler.h>
 #include <db/request_repositories.h>
 #include <nlohmann/json.hpp>
-#include <sfu/voicesfumanager.h>
+#include <sfu/janushandler.h>
 #include <crow.h>
 #include <shared_mutex>
 

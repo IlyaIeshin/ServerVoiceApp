@@ -27,13 +27,21 @@ json CommandDispatcher::handle(crow::websocket::connection& conn, const json& re
     try {
 
         if (type == "voice-signal") {
-            std::cout << "[CMD] recv " << req.dump() << '\n';
             const auto& payload = req.at("payload");
             std::string chId = payload.at("channel_id");
-            VoiceSfuManager::instance().handleSignal(chId, &conn, req);
+
+            if (command == "offer") {
+                JanusHandler::instance().handleOffer(chId, &conn, payload);
+            } else if (command == "ice") {
+                JanusHandler::instance().handleIce(chId, &conn, payload);
+            } else if (command == "subscribe") {
+                int feed = payload.at("feed_id");
+                JanusHandler::instance().handleSubscribe(chId, &conn, feed);
+            } else {
+                std::cout << "[JanusHandler] Unknown voice-signal command: " << command << std::endl;
+            }
             return json();
         }
-
         const auto& payload = req.value("payload", json::object());
 
         static UserRepository    rep_user  (psql_handler);

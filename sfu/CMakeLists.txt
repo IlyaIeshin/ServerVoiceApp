@@ -1,6 +1,6 @@
 project(sfu)
 
-add_library(${PROJECT_NAME} SHARED voicesfumanager.h voicesfumanager.cpp)
+add_library(${PROJECT_NAME} SHARED janushandler.h janushandler.cpp)
 target_include_directories(${PROJECT_NAME} PUBLIC include)
 
 find_package(LibDataChannel CONFIG REQUIRED)
