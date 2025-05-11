@@ -7,7 +7,7 @@ VoiceSfuManager& VoiceSfuManager::instance() {
     // Инициализация логгера (вызываем один раз)
     static bool loggerInitialized = false;
     if (!loggerInitialized) {
-        rtc::InitLogger(rtc::LogLevel::Verbose); // или Verbose для отладки
+        rtc::InitLogger(rtc::LogLevel::Info); // или Verbose для отладки
         loggerInitialized = true;
     }
     static VoiceSfuManager instance;
@@ -77,35 +77,35 @@ void VoiceSfuManager::handleSignal(const std::string& chId,
             // Callback на каждый полученный аудиофрейм
             inTrack->onFrame([&, inTrack, c](const rtc::binary& frame,
                                              const rtc::FrameInfo& fi)
-                             {
-                                 std::cout << "[SERVER] Received audio frame (ts="
-                                           << fi.timestamp << ", size=" << frame.size() << " bytes)\n";
+             {
+                 std::cout << "[SERVER] Received audio frame (ts="
+                           << fi.timestamp << ", size=" << frame.size() << " bytes)\n";
 
-                                 // Пересылаем кадр каждому другому участнику комнаты
-                                 for (auto& [otherConn, otherCli] : room.clients) {
-                                     if (otherConn == c || !otherCli.pc) continue; // себе не шлём
+                 // Пересылаем кадр каждому другому участнику комнаты
+                 for (auto& [otherConn, otherCli] : room.clients) {
+                     if (otherConn == c || !otherCli.pc) continue; // себе не шлём
 
-                                     // Для каждого получателя создаём или получаем свой downTrack
-                                     auto& downTrack = otherCli.downTracks[inTrack.get()];
-                                     if (!downTrack) {
-                                         // Создаём аудио-трек для передачи этому клиенту
-                                         Description::Audio outDesc("forward-audio", Description::Direction::SendOnly);
-                                         outDesc.addOpusCodec(111);  // поддерживаем Opus, PT=111
-                                         downTrack = otherCli.pc->addTrack(outDesc);
-                                         downTrack->onOpen([=]() {
-                                             std::cout << "[SFU] downTrack opened for a receiver\n";
-                                         });
-                                     }
+                     // Для каждого получателя создаём или получаем свой downTrack
+                     auto& downTrack = otherCli.downTracks[inTrack.get()];
+                     if (!downTrack) {
+                         // Создаём аудио-трек для передачи этому клиенту
+                         Description::Audio outDesc("forward-audio", Description::Direction::SendOnly);
+                         outDesc.addOpusCodec(111);  // поддерживаем Opus, PT=111
+                         downTrack = otherCli.pc->addTrack(outDesc);
+                         downTrack->onOpen([=]() {
+                             std::cout << "[SFU] downTrack opened for a receiver\n";
+                         });
+                     }
 
-                                     // Отправляем аудио-фрейм получателю
-                                     if (downTrack->isOpen()) {
-                                         downTrack->sendFrame(frame, fi);
-                                     } else {
-                                         std::cout << "[SFU] warning: try sendFrame while track not open\n";
-                                         downTrack->sendFrame(frame, fi);
-                                     }
-                                 }
-                             });
+                     // Отправляем аудио-фрейм получателю
+                     if (downTrack->isOpen()) {
+                         downTrack->sendFrame(frame, fi);
+                     } else {
+                         std::cout << "[SFU] warning: try sendFrame while track not open\n";
+                         downTrack->sendFrame(frame, fi);
+                     }
+                 }
+             });
         }); // end onTrack
     } // if !cli.pc
 
