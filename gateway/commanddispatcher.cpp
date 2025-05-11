@@ -3,20 +3,37 @@
 #include "helper_gateway.h"
 #include <sstream>
 
+
 using json     = nlohmann::json;
 using JwtToken = std::string;
 
 PostgresHandler  CommandDispatcher::psql_handler{"dbname=postgres user=ilyaieshin password=030609 host=localhost port=5432"};
 CassandraHandler CommandDispatcher::cass_handler{"127.0.0.1"};
 
+std::unordered_map<std::string,
+                   std::unordered_map<std::string, nlohmann::json>> voiceMembers;
+
+std::shared_mutex voiceMtx;
+
+std::unordered_map<crow::websocket::connection*,
+                   std::pair<std::string,std::string>> connVoiceMap;
 
 json CommandDispatcher::handle(crow::websocket::connection& conn, const json& req)
 {
     json response;
     const std::string type    = req.value("type",    "");
     const std::string command = req.value("command", "");
-
+    std::cout << "type: " << type << " command: " << command << std::endl;
     try {
+
+        if (type == "voice-signal") {
+            std::cout << "[CMD] recv " << req.dump() << '\n';
+            const auto& payload = req.at("payload");
+            std::string chId = payload.at("channel_id");
+            VoiceSfuManager::instance().handleSignal(chId, &conn, req);
+            return json();
+        }
+
         const auto& payload = req.value("payload", json::object());
 
         static UserRepository    rep_user  (psql_handler);
@@ -66,7 +83,8 @@ json CommandDispatcher::handle(crow::websocket::connection& conn, const json& re
                     {"status",  "ok"},
                     {"data",    {{"user_json", user_json}}},
                     {"error-msg", json::object()}
-                }; break; }
+                };
+                break; }
             case Error::EmailAlreadyUsed: {
                 response = {
                     {"type",    "response"},
@@ -74,7 +92,8 @@ json CommandDispatcher::handle(crow::websocket::connection& conn, const json& re
                     {"status",  "error"},
                     {"data",    ResponseOK{{"email", payload.at("email")}}},
                     {"error-msg", "email already used"}
-                }; break; }
+                };
+                break; }
             case Error::UsernameAlreadyUsed: {
                 response = {
                     {"type",    "response"},
@@ -82,7 +101,8 @@ json CommandDispatcher::handle(crow::websocket::connection& conn, const json& re
                     {"status",  "error"},
                     {"data",    ResponseOK{{"username", payload.at("username")}}},
                     {"error-msg", "username already used"}
-                }; break; }
+                };
+                break; }
             case Error::DbError:
             default: {
                 response = {
@@ -91,7 +111,8 @@ json CommandDispatcher::handle(crow::websocket::connection& conn, const json& re
                     {"status",  "error"},
                     {"data",    ResponseOK{}},
                     {"error-msg", "unknown error database"}
-                }; break; }
+                };
+                break; }
             }
         }
         else if (type == "command" && command == "authentication") {
@@ -114,7 +135,8 @@ json CommandDispatcher::handle(crow::websocket::connection& conn, const json& re
                     {"status",  "ok"},
                     {"data",    {{"user_json", user_json}}},
                     {"error-msg", json::object()}
-                }; break; }
+                };
+                break; }
             case Error::UserNotFound: {
                 response = {
                     {"type",    "response"},
@@ -122,7 +144,8 @@ json CommandDispatcher::handle(crow::websocket::connection& conn, const json& re
                     {"status",  "error"},
                     {"data",    ResponseOK{{"email", payload.at("email")}}},
                     {"error-msg", "user not found"}
-                }; break; }
+                };
+                break; }
             case Error::WrongPassword: {
                 response = {
                     {"type",    "response"},
@@ -130,7 +153,8 @@ json CommandDispatcher::handle(crow::websocket::connection& conn, const json& re
                     {"status",  "error"},
                     {"data",    ResponseOK{}},
                     {"error-msg", "wrong password"}
-                }; break; }
+                };
+                break; }
             case Error::DbError:
             default: {
                 response = {
@@ -139,7 +163,8 @@ json CommandDispatcher::handle(crow::websocket::connection& conn, const json& re
                     {"status",  "error"},
                     {"data",    ResponseOK{}},
                     {"error-msg", "unknown error database"}
-                }; break; }
+                };
+                break; }
             }
         }
 
@@ -162,7 +187,8 @@ json CommandDispatcher::handle(crow::websocket::connection& conn, const json& re
                     {"status",  "ok"},
                     {"data",    {{"server_json", server_json}}},
                     {"error-msg", json::object()}
-                }; break; }
+                };
+                break; }
             case Error::ServerAlreadyExists: {
                 response = {
                     {"type",    "response"},
@@ -170,7 +196,8 @@ json CommandDispatcher::handle(crow::websocket::connection& conn, const json& re
                     {"status",  "error"},
                     {"data",    json::object()},
                     {"error-msg", "server name already used"}
-                }; break; }
+                };
+                break; }
             case Error::DbError:
             default: {
                 response = {
@@ -179,7 +206,8 @@ json CommandDispatcher::handle(crow::websocket::connection& conn, const json& re
                     {"status",  "error"},
                     {"data",    json::object()},
                     {"error-msg", "unknown error database"}
-                }; break; }
+                };
+                break; }
             }
         }
         else if (command == "leaveServer") {
@@ -192,7 +220,8 @@ json CommandDispatcher::handle(crow::websocket::connection& conn, const json& re
                     {"status",  "ok"},
                     {"data",    {{"server_id", result.value}}},
                     {"error-msg", json::object()}
-                }; break; }
+                };
+                break; }
             case Error::DbError:
             default: {
                 response = {
@@ -201,7 +230,8 @@ json CommandDispatcher::handle(crow::websocket::connection& conn, const json& re
                     {"status",  "error"},
                     {"data",    json::object()},
                     {"error-msg", "unknown error database"}
-                }; break; }
+                };
+                break; }
             }
         }
         else if (command == "joinToServer") {
@@ -242,6 +272,27 @@ json CommandDispatcher::handle(crow::websocket::connection& conn, const json& re
                 break;
             }
         }
+
+        /* ================= ПОДПИСКА НА СЕРВЕР ================= */
+        else if (command == "subscribeServer") {
+            WsSubs::instance().add(payload.at("server_id"), &conn);
+            response = {
+                {"type", "response"},
+                {"command", "subscribeServer"},
+                {"status", "ok"},
+                {"data",   json::object()}
+            };
+        }
+        else if (command == "unsubscribeServer") {
+            WsSubs::instance().remove(payload.at("server_id"), &conn);
+            response = {
+                {"type", "response"},
+                {"command", "unsubscribeServer"},
+                {"status", "ok"},
+                {"data",   json::object()}
+            };
+        }
+
         /* ======================== КАНАЛЫ ======================== */
         else if (command == "createChannel") {
             Result result = rep_server.createChannel(payload.at("name"),
@@ -249,21 +300,33 @@ json CommandDispatcher::handle(crow::websocket::connection& conn, const json& re
                                                      payload.at("type_channel"),
                                                      payload.at("server_id"),
                                                      payload.at("owner_id"));
-            json channel_json = {
-                {"id",           result.value.id},
-                {"name",         result.value.name},
-                {"type_channel", result.value.type},
-                {"server_id",    payload.at("server_id")}
-            };
             switch (result.getResult()) {
             case Error::None: {
+                json channel_json = {
+                    {"id",           result.value.id},
+                    {"name",         result.value.name},
+                    {"type_channel", result.value.type},
+                    {"server_id",    payload.at("server_id")}
+                };
+
                 response = {
                     {"type",    "response"},
                     {"command", "createChannel"},
                     {"status",  "ok"},
                     {"data",    {{"channel_json", channel_json}}},
                     {"error-msg", json::object()}
-                }; break; }
+                };
+
+                json notify = {
+                    {"type","event"},
+                    {"command","channelCreated"},
+                    {"status", "ok"},
+                    {"data", {{"channel_json", channel_json}}}
+                };
+
+                WsSubs::instance().fanout(payload.at("server_id"), notify.dump());
+
+                break; }
             case Error::ChannelAlreadyExists: {
                 response = {
                     {"type",    "response"},
@@ -271,7 +334,8 @@ json CommandDispatcher::handle(crow::websocket::connection& conn, const json& re
                     {"status",  "error"},
                     {"data",    json::object()},
                     {"error-msg", "channel name already used"}
-                }; break; }
+                };
+                break; }
             case Error::DbError:
             default: {
                 response = {
@@ -280,7 +344,8 @@ json CommandDispatcher::handle(crow::websocket::connection& conn, const json& re
                     {"status",  "error"},
                     {"data",    json::object()},
                     {"error-msg", "unknown error database"}
-                }; break; }
+                };
+                break; }
             }
         }
         else if (command == "getAllChannels") {
@@ -399,10 +464,83 @@ json CommandDispatcher::handle(crow::websocket::connection& conn, const json& re
 
         /* =============== ПОДПИСКИ НА ГОЛОСОВЫЕ КАНАЛЫ =============== */
         else if (command == "subscribeVoiceChannel") {
+            WsSubs::instance().add(payload.at("channel_id"), &conn);
 
+            json user_json = {
+                {"user_id", payload.at("user_id")},
+                {"username", payload.at("username")},
+                {"avatar_url", payload.at("avatar_url")}
+            };
+
+            json notify = {
+                {"type", "event"},
+                {"command", "userJoined"},
+                {"status", "ok"},
+                {"data", {{"user_json", user_json}}}
+            };
+
+            WsSubs::instance().fanout(payload.at("channel_id"), notify.dump());
+
+            {
+                std::unique_lock lk(voiceMtx);
+                voiceMembers[payload.at("channel_id")][payload.at("user_id")] = user_json;
+                connVoiceMap[&conn] = { payload.at("channel_id"), payload.at("user_id") };
+            }
+
+            response = {
+                {"type",    "response"},
+                {"command", "subscribeVoiceChannel"},
+                {"status",  "ok"},
+                {"data",    json::object()}
+            };
         }
         else if (command == "unsubscribeVoiceChannel") {
+            WsSubs::instance().remove(payload.at("channel_id"), &conn);
 
+            json notify = {
+                {"type", "event"},
+                {"command", "userLeft"},
+                {"status", "ok"},
+                {"data", payload.at("user_id")}
+            };
+
+            WsSubs::instance().fanout(payload.at("channel_id"), notify.dump());
+
+            {
+                std::unique_lock lk(voiceMtx);
+                auto it = voiceMembers.find(payload.at("channel_id"));
+                if (it != voiceMembers.end()) {
+                    it->second.erase(payload.at("user_id"));
+                    if (it->second.empty()) voiceMembers.erase(it);
+                }
+                connVoiceMap.erase(&conn);
+            }
+
+            response = {
+                {"type",    "response"},
+                {"command", "unsubscribeVoiceChannel"},
+                {"status",  "ok"},
+                {"data",    json::object()}
+            };
+        }
+        else if (command == "getMembersVoiceChat") {
+            const std::string chId = payload.at("channel_id");
+
+            json arr = json::array();
+            {
+                std::shared_lock lk(voiceMtx);
+                if (auto it = voiceMembers.find(chId); it != voiceMembers.end())
+                    for (const auto& [_, user_json] : it->second)
+                        arr.push_back(user_json);
+            }
+
+            response = {
+                {"type",    "response"},
+                {"command", "getMembersVoiceChat"},
+                {"status",  "ok"},
+                {"data",    {{"members", arr}}},
+                {"error-msg", json::object()}
+            };
         }
 
         /* ======================== СПИСОК СЕРВЕРОВ ======================== */
@@ -476,7 +614,7 @@ json CommandDispatcher::handle(crow::websocket::connection& conn, const json& re
         };
     }
 
-    return response;        // Gateway сам сделает dump()
+    return response;
 }
 
 

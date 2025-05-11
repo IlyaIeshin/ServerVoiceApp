@@ -1,11 +1,12 @@
-/* helper.h */
 #ifndef HELPER_GATEWAY_H
 #define HELPER_GATEWAY_H
 
 #include <mutex>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <crow/websocket.h>
+#include <crow/json.h>
 
 class WsSubs {
 public:
@@ -51,6 +52,12 @@ public:
             set.erase(c);
     }
 
+
+    void subscribe   (const std::string& topic, crow::websocket::connection* c) { add(topic, c); }
+    void unsubscribe (const std::string& topic, crow::websocket::connection* c) { remove(topic, c); }
+    void publish     (const std::string& topic, const crow::json::wvalue& j)    { fanout(topic, j.dump()); }
+    void publish     (const std::string& topic, const std::string& txt)         { fanout(topic, txt); }
+    void unsubscribeAll(crow::websocket::connection* c)                         { eraseConnFromAll(c); }
 private:
     WsSubs() = default;
 

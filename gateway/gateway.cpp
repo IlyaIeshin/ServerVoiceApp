@@ -1,5 +1,5 @@
 #include "gateway.h"
-#include "helper_gateway.h"              //  WsSubs
+#include "helper_gateway.h"
 #include "commanddispatcher.h"
 
 #include <crow/json.h>
@@ -87,15 +87,41 @@ void GatewayServer::run(std::uint16_t port)
         .onclose([](crow::websocket::connection& conn,
                     const std::string& reason,
                     std::uint16_t code) {
-            std::cout << "[Gateway] WS close (" << code
-                      << "): " << reason << '\n';
-            WsSubs::instance().eraseConnFromAll(&conn);
+            std::cout << "[Gateway] WS close (" << code << "): "
+                      << reason << '\n';
+            {
+                std::unique_lock lk(voiceMtx);
+
+                if (auto cv = connVoiceMap.find(&conn); cv != connVoiceMap.end()) {
+                    const auto& chId  = cv->second.first;
+                    const auto& userId= cv->second.second;
+
+                    if (auto it = voiceMembers.find(chId); it != voiceMembers.end()) {
+                        it->second.erase(userId);
+                        if (it->second.empty()) voiceMembers.erase(it);
+                    }
+                    connVoiceMap.erase(cv);
+                }
+            }
+
+            WsSubs::instance().unsubscribeAll(&conn);
+            VoiceSfuManager::instance().removeConnection(&conn);
         })
         .onmessage([](crow::websocket::connection& conn,
                       const std::string& data, bool) {
 
             try {
                 const auto req = nlohmann::json::parse(data);
+                if (req.contains("cmd")) {
+                    const std::string cmd = req.at("cmd");
+                    if (cmd == "sub")
+                        for (auto& t : req["topics"]) WsSubs::instance().subscribe(t, &conn);
+                    else if (cmd == "unsub")
+                        for (auto& t : req["topics"]) WsSubs::instance().unsubscribe(t, &conn);
+                    nlohmann::json ok = {{"type","response"},{"cmd",cmd},{"status","ok"}};
+                    conn.send_text(ok.dump());
+                    return;
+                }
                 auto reply = CommandDispatcher::handle(conn, req);
 
                 if (!reply.is_null() && !reply.empty())
