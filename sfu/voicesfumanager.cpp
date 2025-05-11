@@ -7,7 +7,7 @@ VoiceSfuManager& VoiceSfuManager::instance() {
     // Инициализация логгера (вызываем один раз)
     static bool loggerInitialized = false;
     if (!loggerInitialized) {
-        rtc::InitLogger(rtc::LogLevel::Info); // или Verbose для отладки
+        rtc::InitLogger(rtc::LogLevel::Warning); // или Verbose для отладки
         loggerInitialized = true;
     }
     static VoiceSfuManager instance;
@@ -37,18 +37,13 @@ void VoiceSfuManager::handleSignal(const std::string& chId,
         config.iceServers = {{"stun:stun.l.google.com:19302"}};
         cli.pc = std::make_shared<PeerConnection>(config);
 
-        // Callback: локальное описание (offer/answer)
         cli.pc->onLocalDescription([=](Description desc) {
             std::string sdpType = desc.typeString(); // "offer" или "answer"
             std::cout << "[SFU] send " << sdpType << " to client\n";
             std::cout << "[SFU] SDP:\n" << std::string(desc) << "\n";
-            json out;
-            out["type"] = "voice-signal";
-            out["command"] = sdpType;
-            out["payload"] = {
-                {"channel_id", chId},
-                {"sdp", std::string(desc)}
-            };
+            json out{{"type","voice-signal"},
+                     {"command", sdpType},
+                     {"payload", {{"channel_id",chId},{"sdp",std::string(desc)}}}};
             c->send_text(out.dump());
         });
 
@@ -90,8 +85,7 @@ void VoiceSfuManager::handleSignal(const std::string& chId,
             inTrack->onFrame([&, inTrack, c](const rtc::binary& frame,
                                              const rtc::FrameInfo& fi)
              {
-                 std::cout << "[SERVER] Received audio frame (ts="
-                           << fi.timestamp << ", size=" << frame.size() << " bytes)\n";
+                 std::cout << "[SERVER] Received audio frame (ts=" << fi.timestamp << ", size=" << frame.size() << " bytes)\n";
 
                  // Пересылаем кадр каждому другому участнику комнаты
                  for (auto& [otherConn, otherCli] : room.clients) {
@@ -106,7 +100,12 @@ void VoiceSfuManager::handleSignal(const std::string& chId,
                          // Создаём аудио-трек для передачи этому клиенту
                          Description::Audio outDesc("forward-audio", Description::Direction::SendOnly);
                          outDesc.addOpusCodec(111);  // поддерживаем Opus, PT=111
+                         std::cout << "[TEST]1111111" << std::endl;
                          downTrack = otherCli.pc->addTrack(outDesc);
+                         std::cout << "[TEST]2222222" << std::endl;
+
+                         otherCli.pc->createOffer();
+
                          downTrack->onOpen([=]() {
                              std::cout << "[SFU] downTrack opened for a receiver\n";
                          });
@@ -116,7 +115,7 @@ void VoiceSfuManager::handleSignal(const std::string& chId,
                      if (downTrack->isOpen()) {
                          downTrack->sendFrame(frame, fi);
                      } else {
-                         std::cout << "[SFU] warning: try sendFrame while track not open\n";
+                         //std::cout << "[SFU] warning: try sendFrame while track not open\n";
                          downTrack->sendFrame(frame, fi);
                      }
                  }
@@ -127,19 +126,13 @@ void VoiceSfuManager::handleSignal(const std::string& chId,
     // Обработка входящего сигналинга (SDP и ICE) от клиента
     std::string cmd = msg.value("command", "");
     const json& pl = msg.value("payload", json::object());
-    if (cmd == "offer" || cmd == "answer") {
-        // Удалённый SDP
-        Description desc(pl.at("sdp").get<std::string>(), cmd);
-        cli.pc->setRemoteDescription(desc);
-        if (cmd == "offer") {
-            // Клиент прислал Offer -> формируем Answer
-            cli.pc->createAnswer();
-        }
+    if (cmd=="offer"||cmd=="answer") {
+        Description d(pl["sdp"], cmd);
+        cli.pc->setRemoteDescription(d);
+        if (cmd=="offer") cli.pc->createAnswer();
     }
-    else if (cmd == "ice") {
-        // Удалённый ICE-кандидат
-        Candidate cand(pl.at("candidate").get<std::string>());
-        cli.pc->addRemoteCandidate(cand);
+    else if(cmd=="ice") {
+        cli.pc->addRemoteCandidate(Candidate(pl["candidate"]));
     }
 }
 
