@@ -55,7 +55,7 @@ void GatewayServer::run(std::uint16_t port)
     CROW_ROUTE(app, "/avatars/<string>")
     ([](const crow::request&, std::string filename){
 
-        std::string avatarsDir = "//var/voiceServerMedia/avatars/";
+        std::string avatarsDir = "/var/voiceServerMedia/avatars/";
         std::string filepath = avatarsDir + filename;
 
         if (!std::filesystem::exists(filepath))

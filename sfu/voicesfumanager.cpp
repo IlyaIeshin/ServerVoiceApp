@@ -19,11 +19,19 @@ void VoiceSfuManager::handleSignal(const std::string& chId,
                                    const json& msg)
 {
     std::lock_guard<std::mutex> lk(mtx_);
+
+    std::cout << "\n[SFU] ==== Incoming signal ====\n";
+    std::cout << "[SFU] channel_id: " << chId << "\n";
+    std::cout << "[SFU] raw message: " << msg.dump() << "\n";
+
     auto& room = rooms_[chId];
     auto& cli  = room.clients[c];
 
+    std::cout << "[SFU] clients in room '" << chId << "': " << room.clients.size() << "\n";
+
     // Если для данного соединения ещё нет PeerConnection – создаём
     if (!cli.pc) {
+        std::cout << "[SFU] Creating PeerConnection for new client in room '" << chId << "'\n";
         // Конфигурация PeerConnection
         Configuration config;
         config.iceServers = {{"stun:stun.l.google.com:19302"}};
@@ -33,6 +41,7 @@ void VoiceSfuManager::handleSignal(const std::string& chId,
         cli.pc->onLocalDescription([=](Description desc) {
             std::string sdpType = desc.typeString(); // "offer" или "answer"
             std::cout << "[SFU] send " << sdpType << " to client\n";
+            std::cout << "[SFU] SDP:\n" << std::string(desc) << "\n";
             json out;
             out["type"] = "voice-signal";
             out["command"] = sdpType;
@@ -45,6 +54,8 @@ void VoiceSfuManager::handleSignal(const std::string& chId,
 
         // Callback: локальный ICE-кандидат
         cli.pc->onLocalCandidate([=](Candidate cand) {
+            std::cout << "[SFU] send ICE candidate to client (" << chId << "): "
+                      << cand.candidate() << "\n";
             json out;
             out["type"] = "voice-signal";
             out["command"] = "ice";
@@ -57,7 +68,8 @@ void VoiceSfuManager::handleSignal(const std::string& chId,
 
         // Callback: входящий медиатрек от данного клиента
         cli.pc->onTrack([&, c](std::shared_ptr<Track> inTrack) {
-            std::cout << "[SFU] onTrack: incoming\n";
+            std::cout << "[SFU] onTrack: incoming from client " << c << "\n";
+            std::cout << "[SFU] current clients in room '" << chId << "': " << room.clients.size() << "\n";
             cli.uplink = inTrack; // сохраняем uplink-трек
 
             // Настраиваем депакетизатор для Opus
@@ -84,6 +96,9 @@ void VoiceSfuManager::handleSignal(const std::string& chId,
                  // Пересылаем кадр каждому другому участнику комнаты
                  for (auto& [otherConn, otherCli] : room.clients) {
                      if (otherConn == c || !otherCli.pc) continue; // себе не шлём
+
+                     std::cout << "[SFU] sending audio frame to client " << otherConn << " ("
+                               << frame.size() << " bytes, ts=" << fi.timestamp << ")\n";
 
                      // Для каждого получателя создаём или получаем свой downTrack
                      auto& downTrack = otherCli.downTracks[inTrack.get()];
@@ -130,6 +145,7 @@ void VoiceSfuManager::handleSignal(const std::string& chId,
 
 void VoiceSfuManager::removeConnection(crow::websocket::connection* c) {
     std::lock_guard<std::mutex> lk(mtx_);
+    std::cout << "[SFU] removing connection: " << c << "\n";
     // Удаляем клиента из всех комнат, где он был
     for (auto it = rooms_.begin(); it != rooms_.end();) {
         it->second.clients.erase(c);
