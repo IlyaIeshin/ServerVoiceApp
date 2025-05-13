@@ -11,6 +11,13 @@ struct User {
     std::string avatar_url;
 };
 
+struct ServerMember {
+    std::string id;
+    std::string username;
+    std::string avatar_url;
+    std::string server_id;
+};
+
 struct Friend {
     std::string id;
     std::string username;
@@ -70,7 +77,7 @@ public:
                                const std::string& type, const std::string& server_id,
                                const std::string& owner_id);
     Result<std::vector<Channel>> getAllChannels(const std::vector<std::string>& server_id);
-    Result<std::vector<UUID>> getMembers(const std::string& server_id);
+    Result<std::vector<ServerMember>> getMembers(const std::vector<std::string>& server_id);
 
 private:
     PostgresHandler& handler;

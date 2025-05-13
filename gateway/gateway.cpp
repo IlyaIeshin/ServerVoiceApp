@@ -6,9 +6,19 @@
 #include <iostream>
 #include <filesystem>
 
+static const std::filesystem::path AVATARS_DIR =
+    std::filesystem::current_path() / "media" / "avatars";
+
 void GatewayServer::run(std::uint16_t port)
 {
     crow::SimpleApp app;
+
+    if (!std::filesystem::exists(AVATARS_DIR)) {
+        std::filesystem::create_directories(AVATARS_DIR);
+        CROW_LOG_INFO << "Создана папка для аватарок: " << AVATARS_DIR;
+    } else {
+        CROW_LOG_INFO << "Папка для аватарок уже существует: " << AVATARS_DIR;
+    }
 
     CROW_ROUTE(app, "/upload_avatar").methods("POST"_method)
         ([this](const crow::request& req){
@@ -19,30 +29,22 @@ void GatewayServer::run(std::uint16_t port)
 
                 auto it = multipart.part_map.find("avatar");
                 if (it == multipart.part_map.end())
-                {
                     return crow::response(400, "No avatar uploaded");
-                }
 
                 const auto& file_part = it->second;
-
-                std::string avatarsDir = "/var/voiceServerMedia/avatars/";
-                if (!std::filesystem::exists(avatarsDir))
-                {
-                    std::filesystem::create_directories(avatarsDir);
-                }
-
-                std::string extension = ".png";
+                // /var/voiceServerMedia/avatars/
 
                 std::string uuid = generate_uuid();
-                std::string filename = avatarsDir + uuid + extension;
+                std::string filename = uuid + ".png";
 
-                std::ofstream out(filename, std::ios::binary);
+                auto fullpath = AVATARS_DIR / filename;
+                std::ofstream out(fullpath, std::ios::binary);
                 out.write(file_part.body.c_str(), file_part.body.size());
                 out.close();
 
                 crow::json::wvalue res;
                 res["status"] = "ok";
-                res["path"] = uuid + extension;
+                res["path"] = filename;
 
                 return crow::response{res};
             }
@@ -53,15 +55,12 @@ void GatewayServer::run(std::uint16_t port)
         });
 
     CROW_ROUTE(app, "/avatars/<string>")
-    ([](const crow::request&, std::string filename){
-
-        std::string avatarsDir = "/var/voiceServerMedia/avatars/";
-        std::string filepath = avatarsDir + filename;
-
-        if (!std::filesystem::exists(filepath))
+    ([](const crow::request&, std::string filename) {
+        auto fullpath = AVATARS_DIR / filename;
+        if (!std::filesystem::exists(fullpath))
             return crow::response(404);
 
-        std::ifstream file(filepath, std::ios::binary);
+        std::ifstream file(fullpath, std::ios::binary);
         std::ostringstream ss;
         ss << file.rdbuf();
 

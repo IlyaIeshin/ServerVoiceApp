@@ -1,5 +1,6 @@
 #include "request_repositories.h"
 #include <openssl/sha.h>
+#include <iostream>
 
 UserRepository::UserRepository(PostgresHandler &handler_) : handler(handler_) {}
 
@@ -214,9 +215,40 @@ Result<std::vector<Channel> > ServerRepository::getAllChannels(const std::vector
     }
 }
 
-Result<std::vector<UUID> > ServerRepository::getMembers(const std::string &server_id)
+Result<std::vector<ServerMember> > ServerRepository::getMembers(const std::vector<std::string>& server_ids)
 {
-    return {Error::DbError};
+    try {
+        if (server_ids.empty()) {
+            return {Error::None, {}}; // если список пустой — сразу вернуть пусто
+        }
+
+        std::string query = "SELECT user_id, server_id FROM server_membership WHERE server_id = ANY('{";
+        for (size_t i = 0; i < server_ids.size(); ++i) {
+            query += "\"" + server_ids[i] + "\"";
+            if (i != server_ids.size() - 1) {
+                query += ",";
+            }
+        }
+        query += "}')";
+
+        std::string queryGetUser = "SELECT username, avatar_url FROM users WHERE id = ";
+
+        auto results = handler.query(query);
+        std::vector<ServerMember> members;
+        for(const auto& res : results) {
+            std::cout << "user_id: " << res["user_id"].as<std::string>() << std::endl;
+            auto user = handler.query(queryGetUser + "'" + res["user_id"].as<std::string>() + "'");
+            members.push_back({
+                res["user_id"].as<std::string>(),
+                user[0]["username"].as<std::string>(),
+                user[0]["avatar_url"].as<std::string>(),
+                res["server_id"].as<std::string>()
+            });
+        }
+        return {Error::None, members};
+    } catch (...) {
+        return {Error::DbError};
+    }
 }
 
 ChannelRepository::ChannelRepository(PostgresHandler &psql_handler, CassandraHandler &cass_hander)

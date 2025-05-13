@@ -68,7 +68,6 @@ void VoiceSfuManager::handlePacket(std::size_t len) {
             std::cout << "[SFU] JSON parse error: " << e.what() << std::endl;
         }
     } else {
-        // Бинарный Opus-фрейм — ретранслируем
         auto it = peerToChannel_.find(sender_);
         if (it != peerToChannel_.end()) {
             const std::string& channelId = it->second;

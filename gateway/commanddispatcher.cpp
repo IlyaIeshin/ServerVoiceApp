@@ -51,7 +51,27 @@ json CommandDispatcher::handle(crow::websocket::connection& conn, const json& re
                 {"name",       result.value.username},
                 {"avatar_url", result.value.avatar_url.empty() ? "" : result.value.avatar_url}
             };
-
+            switch (result.getResult()) {
+            case Error::None:
+                response = {
+                    {"type",    "response"},
+                    {"command", "loadToken"},
+                    {"status",  "ok"},
+                    {"data",    {{"user_json", user_json}}},
+                    {"error-msg", json::object()}
+                };
+                break;
+            case Error::UserNotFound:
+                response = {
+                    {"type",    "response"},
+                    {"command", "loadToken"},
+                    {"status",  "user_not_found"},
+                    {"data",    {{"user_id", user_id}}},
+                    {"error-msg", "user not found"}
+                };
+            default:
+                break;
+            }
             response = {
                 {"type",    "response"},
                 {"command", "loadToken"},
@@ -272,6 +292,58 @@ json CommandDispatcher::handle(crow::websocket::connection& conn, const json& re
                 break;
             }
         }
+        else if (command == "getServers") {
+            Result result = rep_user.getUserServers(payload.at("user_id"));
+            if (result.getResult() == Error::None) {
+                json arr = json::array();
+                for (const auto& row : result.value) {
+                    arr.push_back({{"id", row.id}, {"name", row.name}, {"icon_url", row.icon_url.empty() ? "" : row.icon_url}});
+                }
+                response = {
+                    {"type",    "response"},
+                    {"command", "getServers"},
+                    {"status",  "ok"},
+                    {"data",    {{"servers", arr}}}
+                };
+            } else {
+                response = {
+                    {"type",    "response"},
+                    {"command", "getServers"},
+                    {"status",  "error"},
+                    {"data",    json::object()},
+                    {"error-msg", "unknown error database"}
+                };
+            }
+        }
+        else if (command == "getServerMembers") {
+            std::vector<std::string> serverIds = split(payload.at("server_ids"), ',');
+            Result result = rep_server.getMembers(serverIds);
+            if (result.getResult() == Error::None) {
+                json arr = json::array();
+                for (const auto& row : result.value) {
+                    arr.push_back({
+                                   {"id", row.id},
+                                   {"username", row.username},
+                                   {"avatar_url", row.avatar_url.empty() ? "" : row.avatar_url},
+                                   {"server_id", row.server_id}
+                    });
+                }
+                response = {
+                    {"type",    "response"},
+                    {"command", "getServerMembers"},
+                    {"status",  "ok"},
+                    {"data",    {{"members", arr}}}
+                };
+            } else {
+                response = {
+                    {"type",    "response"},
+                    {"command", "getServers"},
+                    {"status",  "error"},
+                    {"data",    json::object()},
+                    {"error-msg", "unknown error database"}
+                };
+            }
+        }
 
         /* ================= ПОДПИСКА НА СЕРВЕР ================= */
         else if (command == "subscribeServer") {
@@ -467,10 +539,7 @@ json CommandDispatcher::handle(crow::websocket::connection& conn, const json& re
             const std::string chId = payload.at("channel_id");
             const std::string userId = payload.at("user_id");
 
-            // Запустить SFU (если ещё не запущен)
             VoiceSfuManager::instance();
-
-            // 1) обычная подписка на уведомления и обновление списка участников
             WsSubs::instance().add(chId, &conn);
             {
                 std::unique_lock lk(voiceMtx);
@@ -481,7 +550,7 @@ json CommandDispatcher::handle(crow::websocket::connection& conn, const json& re
                 };
                 connVoiceMap[&conn] = { chId, userId };
             }
-            // Оповестить других участников о новом пользователе
+
             json notify = {
                 {"type",    "event"},
                 {"command", "userJoined"},
@@ -490,7 +559,6 @@ json CommandDispatcher::handle(crow::websocket::connection& conn, const json& re
             };
             WsSubs::instance().fanout(chId, notify.dump());
 
-            // 2) отдаём клиенту UDP-endpoint SFU и идентификаторы
             response = {
                 {"type",    "response"},
                 {"command", "subscribeVoiceChannel"},
@@ -547,31 +615,6 @@ json CommandDispatcher::handle(crow::websocket::connection& conn, const json& re
                 {"data",    {{"members", arr}}},
                 {"error-msg", json::object()}
             };
-        }
-
-        /* ======================== СПИСОК СЕРВЕРОВ ======================== */
-        else if (command == "getServers") {
-            Result result = rep_user.getUserServers(payload.at("user_id"));
-            if (result.getResult() == Error::None) {
-                json arr = json::array();
-                for (const auto& row : result.value) {
-                    arr.push_back({{"id", row.id}, {"name", row.name}, {"icon_url", row.icon_url.empty() ? "" : row.icon_url}});
-                }
-                response = {
-                    {"type",    "response"},
-                    {"command", "getServers"},
-                    {"status",  "ok"},
-                    {"data",    {{"servers", arr}}}
-                };
-            } else {
-                response = {
-                    {"type",    "response"},
-                    {"command", "getServers"},
-                    {"status",  "error"},
-                    {"data",    json::object()},
-                    {"error-msg", "unknown error database"}
-                };
-            }
         }
 
         /* ======================== ДРУЗЬЯ ======================== */
