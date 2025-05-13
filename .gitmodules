@@ -7,3 +7,6 @@
 [submodule "third_party/jwt-cpp"]
 	path = third_party/jwt-cpp
 	url = https://github.com/Thalhammer/jwt-cpp.git
+[submodule "third_party/libdatachannel"]
+	path = third_party/libdatachannel
+	url = https://github.com/paullouisageneau/libdatachannel.git
