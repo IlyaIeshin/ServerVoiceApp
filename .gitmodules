@@ -10,3 +10,6 @@
 [submodule "third_party/libdatachannel"]
 	path = third_party/libdatachannel
 	url = https://github.com/paullouisageneau/libdatachannel.git
+[submodule "third_party/pqxx"]
+	path = third_party/pqxx
+	url = https://github.com/jtv/libpqxx.git
