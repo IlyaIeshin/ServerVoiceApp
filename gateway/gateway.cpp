@@ -105,7 +105,6 @@ void GatewayServer::run(std::uint16_t port)
             }
 
             WsSubs::instance().unsubscribeAll(&conn);
-            VoiceSfuManager::instance().removeConnection(&conn);
         })
         .onmessage([](crow::websocket::connection& conn,
                       const std::string& data, bool) {

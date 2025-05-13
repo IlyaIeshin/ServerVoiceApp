@@ -464,34 +464,42 @@ json CommandDispatcher::handle(crow::websocket::connection& conn, const json& re
 
         /* =============== ПОДПИСКИ НА ГОЛОСОВЫЕ КАНАЛЫ =============== */
         else if (command == "subscribeVoiceChannel") {
-            WsSubs::instance().add(payload.at("channel_id"), &conn);
+            const std::string chId = payload.at("channel_id");
+            const std::string userId = payload.at("user_id");
 
-            json user_json = {
-                {"user_id", payload.at("user_id")},
-                {"username", payload.at("username")},
-                {"avatar_url", payload.at("avatar_url")}
-            };
+            // Запустить SFU (если ещё не запущен)
+            VoiceSfuManager::instance();
 
-            json notify = {
-                {"type", "event"},
-                {"command", "userJoined"},
-                {"status", "ok"},
-                {"data", {{"user_json", user_json}}}
-            };
-
-            WsSubs::instance().fanout(payload.at("channel_id"), notify.dump());
-
+            // 1) обычная подписка на уведомления и обновление списка участников
+            WsSubs::instance().add(chId, &conn);
             {
                 std::unique_lock lk(voiceMtx);
-                voiceMembers[payload.at("channel_id")][payload.at("user_id")] = user_json;
-                connVoiceMap[&conn] = { payload.at("channel_id"), payload.at("user_id") };
+                voiceMembers[chId][userId] = {
+                    {"user_id",    userId},
+                    {"username",   payload.at("username")},
+                    {"avatar_url", payload.at("avatar_url")}
+                };
+                connVoiceMap[&conn] = { chId, userId };
             }
+            // Оповестить других участников о новом пользователе
+            json notify = {
+                {"type",    "event"},
+                {"command", "userJoined"},
+                {"status",  "ok"},
+                {"data",    {{"user_json", voiceMembers[chId][userId]}}}
+            };
+            WsSubs::instance().fanout(chId, notify.dump());
 
+            // 2) отдаём клиенту UDP-endpoint SFU и идентификаторы
             response = {
                 {"type",    "response"},
                 {"command", "subscribeVoiceChannel"},
                 {"status",  "ok"},
-                {"data",    json::object()}
+                {"data", {
+                             {"sfuUrl", "udp://127.0.0.1:40000"},  // UDP-адрес SFU
+                             {"roomId", chId},
+                             {"peerId", userId}
+                         }}
             };
         }
         else if (command == "unsubscribeVoiceChannel") {
@@ -503,7 +511,6 @@ json CommandDispatcher::handle(crow::websocket::connection& conn, const json& re
                 {"status", "ok"},
                 {"data", payload.at("user_id")}
             };
-
             WsSubs::instance().fanout(payload.at("channel_id"), notify.dump());
 
             {
@@ -515,7 +522,6 @@ json CommandDispatcher::handle(crow::websocket::connection& conn, const json& re
                 }
                 connVoiceMap.erase(&conn);
             }
-
             response = {
                 {"type",    "response"},
                 {"command", "unsubscribeVoiceChannel"},
