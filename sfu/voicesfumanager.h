@@ -37,13 +37,7 @@ struct ChannelSfu {
 
 class VoiceSfuManager {
 public:
-    // Singleton
     static VoiceSfuManager& instance();
-
-    // Обработка сигнала (не используется в данном примере UDP-SFU)
-    void handleSignal(const std::string& channelId,
-                      crow::websocket::connection* conn,
-                      const json& req);
 
 private:
     VoiceSfuManager();
@@ -62,6 +56,8 @@ private:
     // Мэппинги: channelId -> Channel и endpoint -> channelId
     std::unordered_map<std::string, ChannelSfu> channels_;
     std::unordered_map<udp::endpoint, std::string, EndpointHash, EndpointEqual> peerToChannel_;
+    // Новая мапа: endpoint -> peerId
+    std::unordered_map<udp::endpoint, std::string, EndpointHash, EndpointEqual> peerId_;
 
     std::thread thread_;
 };

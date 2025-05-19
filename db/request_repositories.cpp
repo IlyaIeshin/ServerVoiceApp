@@ -7,10 +7,10 @@ UserRepository::UserRepository(PostgresHandler &handler_) : handler(handler_) {}
 Result<User> UserRepository::getUserData(const std::string user_id)
 {
     try {
-        auto res = handler.query("SELECT username, avatar_url FROM users WHERE id = '" + user_id + "'");
+        auto res = handler.query("SELECT username, avatar_url, language FROM users WHERE id = '" + user_id + "'");
         if (res.empty()) return {Error::UserNotFound};
 
-        return {Error::None, {user_id, res[0]["username"].as<std::string>(), res[0]["avatar_url"].as<std::string>()}};
+        return {Error::None, {user_id, res[0]["username"].as<std::string>(), res[0]["avatar_url"].as<std::string>(), res[0]["language"].as<std::string>()}};
     } catch (...) {
         return {Error::DbError};
     }
@@ -32,7 +32,7 @@ Result<User> UserRepository::registerUser(const std::string &email, const std::s
 
         handler.execute(insert);
 
-        return {Error::None, {uuid, username, avatar_url}};
+        return {Error::None, {uuid, username, avatar_url, "en"}};
     } catch (...) {
         return {Error::DbError};
     }
@@ -41,7 +41,7 @@ Result<User> UserRepository::registerUser(const std::string &email, const std::s
 Result<User> UserRepository::loginUser(const std::string &email, const std::string &password)
 {
     try {
-        auto res = handler.query("SELECT id, password_hash, username, avatar_url FROM users WHERE email = '" + email + "'");
+        auto res = handler.query("SELECT id, password_hash, username, avatar_url, language FROM users WHERE email = '" + email + "'");
         if (res.empty()) return {Error::UserNotFound};
 
         auto storedHash = res[0]["password_hash"].as<std::string>();
@@ -49,7 +49,7 @@ Result<User> UserRepository::loginUser(const std::string &email, const std::stri
 
         std::string uuid = res[0]["id"].as<std::string>();
 
-        return {Error::None, {uuid, res[0]["username"].as<std::string>(), res[0]["avatar_url"].as<std::string>()}};
+        return {Error::None, {uuid, res[0]["username"].as<std::string>(), res[0]["avatar_url"].as<std::string>(), res[0]["language"].as<std::string>()}};
     } catch (...) {
         return {Error::DbError};
     }
@@ -147,6 +147,17 @@ Result<std::vector<Server> > UserRepository::getUserServers(const std::string &u
             });
         }
         return {Error::None, servers};
+    } catch (...) {
+        return {Error::DbError};
+    }
+}
+
+Result<void> UserRepository::updateLanguage(const std::string &user_id, const std::string &language)
+{
+    try {
+        std::string update = "UPDATE users SET language = '" + language +"' WHERE id = '" + user_id + "'";
+        handler.execute(update);
+        return {Error::None};
     } catch (...) {
         return {Error::DbError};
     }

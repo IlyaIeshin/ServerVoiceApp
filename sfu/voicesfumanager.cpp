@@ -24,7 +24,6 @@ VoiceSfuManager::~VoiceSfuManager() {
 }
 
 void VoiceSfuManager::doReceive() {
-    std::cout << "[SFU] Waiting for incoming UDP packets..." << std::endl;
     sock_.async_receive_from(
         boost::asio::buffer(buf_), sender_,
         [this](boost::system::error_code ec, std::size_t len) {
@@ -32,40 +31,36 @@ void VoiceSfuManager::doReceive() {
             else std::cout << "[SFU] Receive error:" << ec.message() << std::endl;
             doReceive();
         }
-        );
+    );
 }
 
 void VoiceSfuManager::handlePacket(std::size_t len) {
-    std::cout << "[SFU] Packet received: length=" << len
-              << ", from " << sender_.address().to_string()
-              << ":" << sender_.port() << std::endl;
     if (len == 0) return;
+
     if (buf_[0] == '{') {
         std::string raw(buf_.data(), len);
         std::cout << "[SFU] JSON command received: " << raw << std::endl;
         try {
             json j = json::parse(raw);
-            std::string cmd = j.at("command").get<std::string>();
+            std::string cmd     = j.at("command").get<std::string>();
             std::string channel = j.at("channel").get<std::string>();
-            std::string peer = j.value("peer", "");
+            std::string peer    = j.value("peer", "");
 
             if (cmd == "join") {
                 channels_[channel].peers.insert(sender_);
                 peerToChannel_[sender_] = channel;
-                std::cout << "[SFU] Peer '" << peer << "' joined channel '"
-                          << channel << "'" << std::endl;
+                peerId_[sender_] = peer;
             }
             else if (cmd == "leave") {
                 auto it = channels_.find(channel);
                 if (it != channels_.end()) {
                     it->second.peers.erase(sender_);
                     peerToChannel_.erase(sender_);
-                    std::cout << "[SFU] Peer '" << peer << "' left channel '"
-                              << channel << "'" << std::endl;
+                    peerId_.erase(sender_);
                 }
             }
         } catch (const std::exception& e) {
-            std::cout << "[SFU] JSON parse error: " << e.what() << std::endl;
+            std::cout << "[SFU] JSON parse error:" << e.what() << std::endl;
         }
     } else {
         auto it = peerToChannel_.find(sender_);
@@ -73,12 +68,18 @@ void VoiceSfuManager::handlePacket(std::size_t len) {
             const std::string& channelId = it->second;
             auto cit = channels_.find(channelId);
             if (cit != channels_.end()) {
+                auto pidIter = peerId_.find(sender_);
+                std::string pid = (pidIter != peerId_.end() ? pidIter->second : "");
                 for (const auto& ep : cit->second.peers) {
                     if (ep != sender_) {
-                        sock_.send_to(boost::asio::buffer(buf_.data(), len), ep);
-                        std::cout << "[SFU] Relayed packet of size " << len
-                                  << " to " << ep.address().to_string()
-                                  << ":" << ep.port() << std::endl;
+                        uint16_t pidLen = static_cast<uint16_t>(pid.size());
+                        std::string sendBuf;
+                        sendBuf.reserve(2 + pidLen + len);
+                        sendBuf.push_back(static_cast<char>((pidLen >> 8) & 0xFF));
+                        sendBuf.push_back(static_cast<char>( pidLen        & 0xFF));
+                        sendBuf.append(pid);
+                        sendBuf.append(buf_.data(), len);
+                        sock_.send_to(boost::asio::buffer(sendBuf.data(), sendBuf.size()), ep);
                     }
                 }
             }
@@ -86,10 +87,4 @@ void VoiceSfuManager::handlePacket(std::size_t len) {
             std::cout << "[SFU] Unknown sender, not in any channel" << std::endl;
         }
     }
-}
-
-void VoiceSfuManager::handleSignal(const std::string& /*channelId*/,
-                                   crow::websocket::connection* /*conn*/,
-                                   const json& /*req*/) {
-    std::cout << "[SFU] handleSignal called - not used in UDP SFU" << std::endl;
 }

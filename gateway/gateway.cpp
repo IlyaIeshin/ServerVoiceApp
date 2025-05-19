@@ -22,21 +22,15 @@ void GatewayServer::run(std::uint16_t port)
 
     CROW_ROUTE(app, "/upload_avatar").methods("POST"_method)
         ([this](const crow::request& req){
-
-            try
-            {
+            try {
                 crow::multipart::message multipart(req);
-
                 auto it = multipart.part_map.find("avatar");
                 if (it == multipart.part_map.end())
                     return crow::response(400, "No avatar uploaded");
 
                 const auto& file_part = it->second;
-                // /var/voiceServerMedia/avatars/
-
                 std::string uuid = generate_uuid();
                 std::string filename = uuid + ".png";
-
                 auto fullpath = AVATARS_DIR / filename;
                 std::ofstream out(fullpath, std::ios::binary);
                 out.write(file_part.body.c_str(), file_part.body.size());
@@ -45,11 +39,9 @@ void GatewayServer::run(std::uint16_t port)
                 crow::json::wvalue res;
                 res["status"] = "ok";
                 res["path"] = filename;
-
                 return crow::response{res};
             }
-            catch (const std::exception& e)
-            {
+            catch (const std::exception& e) {
                 return crow::response(400, std::string("Failed to parse multipart data: ") + e.what());
             }
         });
@@ -80,21 +72,17 @@ void GatewayServer::run(std::uint16_t port)
 
     CROW_WEBSOCKET_ROUTE(app, "/ws")
         .onopen([](crow::websocket::connection& conn) {
-            std::cout << "[Gateway] WS open from "
-                      << conn.get_remote_ip() << '\n';
+            std::cout << "[Gateway] WS open from " << conn.get_remote_ip() << '\n';
         })
         .onclose([](crow::websocket::connection& conn,
                     const std::string& reason,
                     std::uint16_t code) {
-            std::cout << "[Gateway] WS close (" << code << "): "
-                      << reason << '\n';
+            std::cout << "[Gateway] WS close (" << code << "): " << reason << '\n';
             {
                 std::unique_lock lk(voiceMtx);
-
                 if (auto cv = connVoiceMap.find(&conn); cv != connVoiceMap.end()) {
                     const auto& chId  = cv->second.first;
                     const auto& userId= cv->second.second;
-
                     if (auto it = voiceMembers.find(chId); it != voiceMembers.end()) {
                         it->second.erase(userId);
                         if (it->second.empty()) voiceMembers.erase(it);
@@ -102,12 +90,9 @@ void GatewayServer::run(std::uint16_t port)
                     connVoiceMap.erase(cv);
                 }
             }
-
             WsSubs::instance().unsubscribeAll(&conn);
         })
-        .onmessage([](crow::websocket::connection& conn,
-                      const std::string& data, bool) {
-
+        .onmessage([](crow::websocket::connection& conn, const std::string& data, bool) {
             try {
                 const auto req = nlohmann::json::parse(data);
                 if (req.contains("cmd")) {
@@ -126,13 +111,10 @@ void GatewayServer::run(std::uint16_t port)
                     conn.send_text(reply.dump());
             }
             catch (const std::exception& e) {
-                nlohmann::json err = {
-                    {"type","error"}, {"message", e.what()}
-                };
+                nlohmann::json err = {{"type","error"}, {"message", e.what()}};
                 conn.send_text(err.dump());
             }
         });
-
     std::cout << "[Gateway] listening on " << port << '\n';
     app.port(port).multithreaded().run();
 }

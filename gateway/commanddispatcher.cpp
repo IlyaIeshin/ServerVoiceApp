@@ -10,32 +10,19 @@ using JwtToken = std::string;
 PostgresHandler  CommandDispatcher::psql_handler{"dbname=postgres user=ilyaieshin password=030609 host=localhost port=5432"};
 CassandraHandler CommandDispatcher::cass_handler{"127.0.0.1"};
 
-std::unordered_map<std::string,
-                   std::unordered_map<std::string, nlohmann::json>> voiceMembers;
+std::unordered_map<std::string,std::unordered_map<std::string, nlohmann::json>> voiceMembers;
 
 std::shared_mutex voiceMtx;
 
-std::unordered_map<crow::websocket::connection*,
-                   std::pair<std::string,std::string>> connVoiceMap;
+std::unordered_map<crow::websocket::connection*, std::pair<std::string,std::string>> connVoiceMap;
 
 json CommandDispatcher::handle(crow::websocket::connection& conn, const json& req)
 {
     json response;
     const std::string type    = req.value("type",    "");
     const std::string command = req.value("command", "");
-    std::cout << "type: " << type << " command: " << command << std::endl;
     try {
-
-        if (type == "voice-signal") {
-            std::cout << "[CMD] recv " << req.dump() << '\n';
-            const auto& payload = req.at("payload");
-            std::string chId = payload.at("channel_id");
-            VoiceSfuManager::instance().handleSignal(chId, &conn, req);
-            return json();
-        }
-
         const auto& payload = req.value("payload", json::object());
-
         static UserRepository    rep_user  (psql_handler);
         static ServerRepository  rep_server(psql_handler);
         static ChannelRepository rep_channel(psql_handler, cass_handler);
@@ -49,7 +36,8 @@ json CommandDispatcher::handle(crow::websocket::connection& conn, const json& re
             json user_json = {
                 {"user_id",         result.value.id},
                 {"name",       result.value.username},
-                {"avatar_url", result.value.avatar_url.empty() ? "" : result.value.avatar_url}
+                {"avatar_url", result.value.avatar_url.empty() ? "" : result.value.avatar_url},
+                {"language", result.value.language}
             };
             switch (result.getResult()) {
             case Error::None:
@@ -94,6 +82,7 @@ json CommandDispatcher::handle(crow::websocket::connection& conn, const json& re
                     {"user_id",         result.value.id},
                     {"username",       result.value.username},
                     {"avatar_url", result.value.avatar_url.empty() ? "" : result.value.avatar_url},
+                    {"language", result.value.language},
                     {"token", jwt}
                 };
 
@@ -146,6 +135,7 @@ json CommandDispatcher::handle(crow::websocket::connection& conn, const json& re
                     {"user_id",         result.value.id},
                     {"username",       result.value.username},
                     {"avatar_url", result.value.avatar_url.empty() ? "" : result.value.avatar_url},
+                    {"language", result.value.language},
                     {"token", jwt}
                 };
 
@@ -187,7 +177,22 @@ json CommandDispatcher::handle(crow::websocket::connection& conn, const json& re
                 break; }
             }
         }
-
+        else if (command == "updateLanguage") {
+            Result result = rep_user.updateLanguage(payload.at("user_id"), payload.at("language"));
+            switch (result.getResult()) {
+            case Error::None: {
+                response = {
+                    {"type",    "response"},
+                    {"command", "updateLanguage"},
+                    {"status",  "ok"},
+                    {"data",    json::object()},
+                    {"error-msg", json::object()}
+                };
+                break; }
+            default:
+                break;
+            }
+        }
         /* ======================== СЕРВЕРЫ ======================== */
         else if (command == "createServer") {
             Result result = rep_user.createServer(payload.at("name"),
@@ -344,7 +349,6 @@ json CommandDispatcher::handle(crow::websocket::connection& conn, const json& re
                 };
             }
         }
-
         /* ================= ПОДПИСКА НА СЕРВЕР ================= */
         else if (command == "subscribeServer") {
             WsSubs::instance().add(payload.at("server_id"), &conn);
@@ -364,7 +368,6 @@ json CommandDispatcher::handle(crow::websocket::connection& conn, const json& re
                 {"data",   json::object()}
             };
         }
-
         /* ======================== КАНАЛЫ ======================== */
         else if (command == "createChannel") {
             Result result = rep_server.createChannel(payload.at("name"),
@@ -445,7 +448,6 @@ json CommandDispatcher::handle(crow::websocket::connection& conn, const json& re
                 };
             }
         }
-
         /* =============== ПОДПИСКИ НА ТЕКСТОВЫЕ КАНАЛЫ =============== */
         else if (command == "subscribeTextChannel") {
             WsSubs::instance().add(payload.at("channel_id"), &conn);
@@ -533,7 +535,6 @@ json CommandDispatcher::handle(crow::websocket::connection& conn, const json& re
                             {"error-msg","db error"} };
             }
         }
-
         /* =============== ПОДПИСКИ НА ГОЛОСОВЫЕ КАНАЛЫ =============== */
         else if (command == "subscribeVoiceChannel") {
             const std::string chId = payload.at("channel_id");
@@ -616,7 +617,6 @@ json CommandDispatcher::handle(crow::websocket::connection& conn, const json& re
                 {"error-msg", json::object()}
             };
         }
-
         /* ======================== ДРУЗЬЯ ======================== */
         else if (command == "getFriends") {
             Result result = rep_user.getFriends(payload.at("user_id"));
@@ -641,7 +641,6 @@ json CommandDispatcher::handle(crow::websocket::connection& conn, const json& re
                 };
             }
         }
-
         /* ==================== НЕИЗВЕСТНАЯ КОМАНДА ==================== */
         else {
             response = {

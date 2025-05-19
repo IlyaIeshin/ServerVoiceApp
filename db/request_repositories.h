@@ -9,6 +9,7 @@ struct User {
     std::string id;
     std::string username;
     std::string avatar_url;
+    std::string language;
 };
 
 struct ServerMember {
@@ -56,14 +57,16 @@ class UserRepository {
 public:
     explicit UserRepository(PostgresHandler& handler);
     Result<User> getUserData(const std::string user_id);
-    Result<User> registerUser(const std::string& email, const std::string& username, const std::string& password, const std::string& avatar_url);
+    Result<User> registerUser(const std::string& email, const std::string& username,
+                              const std::string& password, const std::string& avatar_url);
     Result<User> loginUser(const std::string& email, const std::string& password);
     Result<UUID> leaveServer(const std::string& user_id, const std::string& server_id);
     Result<Server> createServer(const std::string name, const std::string& owner_id,
-                              const std::string& password, const std::string& icon_url);
+                                const std::string& password, const std::string& icon_url);
     Result<Server> joinToServer(const std::string& user_id, const std::string& server_id);
     Result<std::vector<Friend>> getFriends(const std::string& user_id);
     Result<std::vector<Server>> getUserServers(const std::string& user_id);
+    Result<void> updateLanguage(const std::string& user_id, const std::string& language);
 
 private:
     PostgresHandler& handler;
@@ -87,8 +90,10 @@ private:
 class ChannelRepository {
 public:
     explicit ChannelRepository(PostgresHandler& psql_handler, CassandraHandler& cass_hander);
-    Result<PagedMessages> getMessagesPage(const std::string& channel_id,const std::string& pageState = "");
-    Result<Message> addMessage(const std::string& sender_id, const std::string& text, const std::string& channel_id);
+    Result<PagedMessages> getMessagesPage(const std::string& channel_id,
+                                          const std::string& pageState = "");
+    Result<Message> addMessage(const std::string& sender_id, const std::string& text,
+                               const std::string& channel_id);
 
 private:
     PostgresHandler& handlerPsql;
